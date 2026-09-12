@@ -6,7 +6,9 @@ use esp_hal::{
 use log::warn;
 use sht4x::{Precision, Sht4xAsync};
 
-use crate::{INDOOR_READING, IndoorReading};
+use climate_data_gateway::reporting::IndoorSource;
+
+use crate::INDOOR_READING;
 
 const RETRY_INTERVAL: Duration = Duration::from_secs(5);
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(60);
@@ -16,7 +18,13 @@ const SAMPLE_INTERVAL: Duration = Duration::from_secs(60);
     clippy::large_stack_frames,
     reason = "Embassy stores task state statically; the release poll frame was verified at 288 bytes"
 )]
-pub async fn read_indoor(i2c: AnyI2c<'static>, sda: AnyPin<'static>, scl: AnyPin<'static>) {
+pub async fn read_indoor(
+    i2c: AnyI2c<'static>,
+    sda: AnyPin<'static>,
+    scl: AnyPin<'static>,
+    boot_id: [u8; 16],
+) {
+    let mut source = IndoorSource::new(boot_id);
     let bus = I2c::new(i2c, Config::default().with_timeout(BusTimeout::Maximum))
         .expect("valid I2C configuration")
         .with_sda(sda)
@@ -35,10 +43,10 @@ pub async fn read_indoor(i2c: AnyI2c<'static>, sda: AnyPin<'static>, scl: AnyPin
         loop {
             let next_sample = Instant::now() + SAMPLE_INTERVAL;
             match sensor.measure(Precision::High, &mut delay).await {
-                Ok(measurement) => INDOOR_READING.signal(IndoorReading {
-                    temperature_celsius: measurement.temperature_celsius().to_num(),
-                    relative_humidity_percent: measurement.humidity_percent().to_num(),
-                }),
+                Ok(measurement) => INDOOR_READING.signal(source.produce(
+                    measurement.temperature_celsius().to_num(),
+                    measurement.humidity_percent().to_num(),
+                )),
                 Err(error) => {
                     warn!("SHT40 measurement failed: {error:?}");
                     Timer::after(RETRY_INTERVAL).await;

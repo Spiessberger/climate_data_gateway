@@ -10,18 +10,16 @@
 mod indoor;
 mod radio;
 
-use climate_data_gateway::weather::WeatherReading;
+use climate_data_gateway::{reporting::IndoorReading, weather::WeatherReading};
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use esp_backtrace as _;
-use esp_hal::timer::timg::TimerGroup;
-use log::info;
-
-struct IndoorReading {
-    temperature_celsius: f32,
-    relative_humidity_percent: f32,
-}
+use esp_hal::{
+    rng::{Trng, TrngSource},
+    timer::timg::TimerGroup,
+};
+use log::{info, warn};
 
 // One consumer; publishing replaces any reading it has not consumed yet.
 static INDOOR_READING: Signal<CriticalSectionRawMutex, IndoorReading> = Signal::new();
@@ -34,12 +32,23 @@ async fn main(spawner: Spawner) {
     esp_println::logger::init_logger_from_env();
     let p = esp_hal::init(esp_hal::Config::default());
 
+    let mut boot_id = [0; 16];
+    {
+        // The external SHT40 and CC1101 do not enable the ESP's RF entropy source.
+        // Declaration order ensures Trng is dropped before its ADC entropy source.
+        let _entropy = TrngSource::new(p.RNG, p.ADC1);
+        let trng = Trng::try_new().expect("ADC entropy source enabled");
+        trng.read(&mut boot_id);
+    }
+
     let timg0 = TimerGroup::new(p.TIMG0);
     let sw_interrupt = esp_hal::interrupt::software::SoftwareInterruptControl::new(p.SW_INTERRUPT);
     esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
 
     spawner.spawn(log_readings().unwrap());
-    spawner.spawn(indoor::read_indoor(p.I2C0.into(), p.GPIO22.into(), p.GPIO23.into()).unwrap());
+    spawner.spawn(
+        indoor::read_indoor(p.I2C0.into(), p.GPIO22.into(), p.GPIO23.into(), boot_id).unwrap(),
+    );
     spawner.spawn(
         radio::receive_weather(
             p.SPI2.into(),
@@ -55,12 +64,15 @@ async fn main(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn log_readings() {
+    // Indoor fields, including finite f32 extremes, fit in 256 bytes (wire-tested).
+    let mut buffer = [0; 256];
     loop {
         match select(INDOOR_READING.wait(), WEATHER_READING.wait()).await {
-            Either::First(reading) => info!(
-                "Indoor reading: temperature={:.2} °C, relative humidity={:.2} %RH",
-                reading.temperature_celsius, reading.relative_humidity_percent
-            ),
+            Either::First(reading) => match reading.encode(&mut buffer) {
+                // Printer holds the same lock as operational logging for the whole record.
+                Ok(record) => esp_println::Printer::write_bytes(record),
+                Err(_) => warn!("Could not format indoor DATA record"),
+            },
             Either::Second(reading) => log_weather(reading),
         }
     }
