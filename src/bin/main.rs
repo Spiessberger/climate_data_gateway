@@ -10,10 +10,14 @@
 mod indoor;
 mod radio;
 
-use climate_data_gateway::{reporting::IndoorReading, weather::WeatherReading};
+use climate_data_gateway::{
+    reporting::{Heartbeat, IndoorReading},
+    weather::WeatherReading,
+};
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
+use embassy_time::{Duration, Ticker};
 use esp_backtrace as _;
 use esp_hal::{
     rng::{Trng, TrngSource},
@@ -46,6 +50,7 @@ async fn main(spawner: Spawner) {
     esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
 
     spawner.spawn(log_readings().unwrap());
+    spawner.spawn(report_heartbeats(boot_id).unwrap());
     spawner.spawn(
         indoor::read_indoor(p.I2C0.into(), p.GPIO22.into(), p.GPIO23.into(), boot_id).unwrap(),
     );
@@ -60,6 +65,20 @@ async fn main(spawner: Spawner) {
         )
         .unwrap(),
     );
+}
+
+#[embassy_executor::task]
+async fn report_heartbeats(boot_id: [u8; 16]) {
+    let heartbeat = Heartbeat::new(boot_id);
+    let mut ticker = Ticker::every(Duration::from_secs(5));
+    let mut buffer = [0; 128];
+    loop {
+        ticker.next().await;
+        match heartbeat.encode(&mut buffer) {
+            Ok(record) => esp_println::Printer::write_bytes(record),
+            Err(_) => warn!("Could not format heartbeat DATA record"),
+        }
+    }
 }
 
 #[embassy_executor::task]

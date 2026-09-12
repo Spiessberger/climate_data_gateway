@@ -2,6 +2,36 @@ use core::fmt::{self, Write};
 
 pub const MAX_RECORD_BYTES: usize = 1024;
 
+/// Communication evidence independent of either sensor's production counter.
+pub struct Heartbeat {
+    boot_id: [u8; 16],
+}
+
+impl Heartbeat {
+    pub fn new(boot_id: [u8; 16]) -> Self {
+        Self { boot_id }
+    }
+
+    /// Only a successful result may be transmitted, in one synchronized write.
+    pub fn encode<'a>(&self, buffer: &'a mut [u8]) -> Result<&'a [u8], fmt::Error> {
+        let capacity = buffer.len().min(MAX_RECORD_BYTES);
+        let mut output = RecordBuffer {
+            bytes: &mut buffer[..capacity],
+            len: 0,
+        };
+        write!(
+            output,
+            "DATA {{\"v\":1,\"type\":\"heartbeat\",\"boot_id\":\""
+        )?;
+        for byte in self.boot_id {
+            write!(output, "{byte:02x}")?;
+        }
+        writeln!(output, "\"}}")?;
+        let len = output.len;
+        Ok(&buffer[..len])
+    }
+}
+
 /// Identity and sequence assigned at acquisition, before latest-reading overwrite.
 pub struct IndoorSource {
     boot_id: [u8; 16],
@@ -109,6 +139,22 @@ mod tests {
         assert_eq!(sequence(source.produce(10.0, 20.0)), 1);
         let _overwritten = source.produce(11.0, 21.0);
         assert_eq!(sequence(source.produce(12.0, 22.0)), 3);
+    }
+
+    #[test]
+    fn heartbeats_share_boot_identity_without_advancing_readings() {
+        let mut source = IndoorSource::new([0xab; 16]);
+        assert_eq!(sequence(source.produce(10.0, 20.0)), 1);
+        let heartbeat = Heartbeat::new([0xab; 16]);
+        for _ in 0..3 {
+            let mut buffer = [0; 128];
+            assert_eq!(
+                heartbeat.encode(&mut buffer).unwrap(),
+                b"DATA {\"v\":1,\"type\":\"heartbeat\",\"boot_id\":\"abababababababababababababababab\"}\n"
+            );
+        }
+        assert_eq!(sequence(source.produce(11.0, 21.0)), 2);
+        assert!(heartbeat.encode(&mut [0; 32]).is_err());
     }
 
     #[test]
