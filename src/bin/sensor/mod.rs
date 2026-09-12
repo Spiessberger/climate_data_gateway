@@ -8,7 +8,8 @@ use sht4x::{Precision, Sht4xAsync};
 
 use crate::{CLIMATE_READING, ClimateReading};
 
-const SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
+const RETRY_INTERVAL: Duration = Duration::from_secs(5);
+const SAMPLE_INTERVAL: Duration = Duration::from_secs(60);
 
 #[embassy_executor::task]
 #[allow(
@@ -27,7 +28,7 @@ pub async fn read_climate(i2c: I2C0<'static>, sda: GPIO22<'static>, scl: GPIO23<
     loop {
         if let Err(error) = sensor.soft_reset(&mut delay).await {
             warn!("SHT40 initialization failed: {error:?}");
-            Timer::after(SAMPLE_INTERVAL).await;
+            Timer::after(RETRY_INTERVAL).await;
             continue;
         }
 
@@ -40,7 +41,7 @@ pub async fn read_climate(i2c: I2C0<'static>, sda: GPIO22<'static>, scl: GPIO23<
                 }),
                 Err(error) => {
                     warn!("SHT40 measurement failed: {error:?}");
-                    Timer::after(SAMPLE_INTERVAL).await;
+                    Timer::after(RETRY_INTERVAL).await;
                     break;
                 }
             }
