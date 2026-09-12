@@ -51,13 +51,23 @@ impl IndoorReading {
         for byte in self.boot_id {
             write!(output, "{byte:02x}")?;
         }
+        let temperature_celsius = normalize_one_decimal_zero(self.temperature_celsius);
+        let relative_humidity_percent = normalize_one_decimal_zero(self.relative_humidity_percent);
         writeln!(
             output,
-            "\",\"seq\":{},\"temperature_celsius\":{},\"relative_humidity_percent\":{}}}",
-            self.seq, self.temperature_celsius, self.relative_humidity_percent
+            "\",\"seq\":{},\"temperature_celsius\":{:.1},\"relative_humidity_percent\":{:.1}}}",
+            self.seq, temperature_celsius, relative_humidity_percent
         )?;
         let len = output.len;
         Ok(&buffer[..len])
+    }
+}
+
+fn normalize_one_decimal_zero(value: f32) -> f32 {
+    if value > -0.05 && value < 0.05 {
+        0.0
+    } else {
+        value
     }
 }
 
@@ -165,5 +175,30 @@ mod tests {
                 "\"temperature_celsius\":21.5,\"relative_humidity_percent\":48.2}\n"
             )
         );
+    }
+
+    #[test]
+    fn indoor_data_record_formats_both_measurements_with_one_decimal_digit() {
+        let mut source = IndoorSource::new([0; 16]);
+        let mut buffer = [0; MAX_RECORD_BYTES];
+
+        let rounded = source.produce(21.26, 48.24);
+        let wire = core::str::from_utf8(rounded.encode(&mut buffer).unwrap()).unwrap();
+        assert!(wire.contains("\"temperature_celsius\":21.3,\"relative_humidity_percent\":48.2"));
+
+        let whole = source.produce(21.0, 48.0);
+        let wire = core::str::from_utf8(whole.encode(&mut buffer).unwrap()).unwrap();
+        assert!(wire.contains("\"temperature_celsius\":21.0,\"relative_humidity_percent\":48.0"));
+    }
+
+    #[test]
+    fn indoor_data_record_normalizes_negative_zero_after_rounding() {
+        let mut source = IndoorSource::new([0; 16]);
+        let reading = source.produce(-0.04, -0.0);
+        let mut buffer = [0; MAX_RECORD_BYTES];
+
+        let wire = core::str::from_utf8(reading.encode(&mut buffer).unwrap()).unwrap();
+
+        assert!(wire.contains("\"temperature_celsius\":0.0,\"relative_humidity_percent\":0.0"));
     }
 }
