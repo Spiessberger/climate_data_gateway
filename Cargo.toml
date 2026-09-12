@@ -8,7 +8,7 @@ version      = "0.1.0"
 name = "climate-data-gateway"
 path = "./src/bin/main.rs"
 
-[dependencies]
+[target.'cfg(target_os = "none")'.dependencies]
 esp-hal = { version = "~1.1.0", features = ["esp32c6", "log-04", "unstable"] }
 
 esp-rtos = { version = "0.3.0", features = ["embassy", "esp32c6", "log-04"] }
@@ -19,6 +19,7 @@ log                    = "0.4.27"
 embassy-executor = { version = "0.10.0", features = ["log"] }
 embassy-time = { version = "0.5.0", features = ["log"] }
 embassy-sync = "0.8.0"
+embassy-futures = "0.1.2"
 sht4x = { version = "0.2.0", features = ["embedded-hal-async"] }
 esp-backtrace = { version = "0.19.0", features = [
   "esp32c6",

@@ -7,9 +7,12 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+mod radio;
 mod sensor;
 
+use climate_data_gateway::weather::WeatherReading;
 use embassy_executor::Spawner;
+use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use esp_backtrace as _;
 use esp_hal::timer::timg::TimerGroup;
@@ -22,32 +25,54 @@ struct ClimateReading {
 
 // One consumer; publishing replaces any reading it has not consumed yet.
 static CLIMATE_READING: Signal<CriticalSectionRawMutex, ClimateReading> = Signal::new();
+static WEATHER_READING: Signal<CriticalSectionRawMutex, WeatherReading> = Signal::new();
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) {
     esp_println::logger::init_logger_from_env();
-    let peripherals = esp_hal::init(esp_hal::Config::default());
+    let p = esp_hal::init(esp_hal::Config::default());
 
-    let timg0 = TimerGroup::new(peripherals.TIMG0);
-    let sw_interrupt =
-        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    let timg0 = TimerGroup::new(p.TIMG0);
+    let sw_interrupt = esp_hal::interrupt::software::SoftwareInterruptControl::new(p.SW_INTERRUPT);
     esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
 
     spawner.spawn(log_readings().unwrap());
+    spawner.spawn(sensor::read_climate(p.I2C0, p.GPIO22, p.GPIO23).unwrap());
     spawner.spawn(
-        sensor::read_climate(peripherals.I2C0, peripherals.GPIO22, peripherals.GPIO23).unwrap(),
+        radio::receive_weather(p.SPI2, p.GPIO18, p.GPIO20, p.GPIO19, p.GPIO0, p.GPIO1).unwrap(),
     );
 }
 
 #[embassy_executor::task]
 async fn log_readings() {
     loop {
-        let reading = CLIMATE_READING.wait().await;
-        info!(
-            "Climate reading: temperature={:.2} °C, relative humidity={:.2} %RH",
-            reading.temperature_celsius, reading.relative_humidity_percent
-        );
+        match select(CLIMATE_READING.wait(), WEATHER_READING.wait()).await {
+            Either::First(reading) => info!(
+                "Climate reading: temperature={:.2} °C, relative humidity={:.2} %RH",
+                reading.temperature_celsius, reading.relative_humidity_percent
+            ),
+            Either::Second(reading) => log_weather(reading),
+        }
     }
+}
+
+fn log_weather(reading: WeatherReading) {
+    info!(
+        "Weather reading: station ID={}, temperature={:?} °C, relative humidity={:?} %RH, wind direction={:?} degrees, wind speed={:?} m/s, gust={:?} m/s, cumulative rain={:.1} mm, UV={:?} µW/cm², UV index={:?}, light={:?} lux, battery low={}, RSSI={:.1} dBm, LQI={}",
+        reading.station_id,
+        reading.temperature_celsius,
+        reading.relative_humidity_percent,
+        reading.wind_direction_degrees,
+        reading.wind_speed_mps,
+        reading.gust_speed_mps,
+        reading.rain_mm,
+        reading.uv_microwatts_per_cm2,
+        reading.uv_index,
+        reading.light_lux,
+        reading.battery_low,
+        reading.rssi_dbm,
+        reading.lqi,
+    );
 }
