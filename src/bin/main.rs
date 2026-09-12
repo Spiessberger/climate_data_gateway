@@ -10,24 +10,21 @@
 mod indoor;
 mod radio;
 
-use climate_data_gateway::{
-    reporting::{Heartbeat, IndoorReading},
-    weather::WeatherReading,
-};
+use climate_data_gateway::reporting::{Heartbeat, IndoorReading, MAX_RECORD_BYTES, WeatherReport};
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Ticker};
 use esp_backtrace as _;
 use esp_hal::{
     rng::{Trng, TrngSource},
     timer::timg::TimerGroup,
 };
-use log::{info, warn};
+use log::warn;
 
 // One consumer; publishing replaces any reading it has not consumed yet.
 static INDOOR_READING: Signal<CriticalSectionRawMutex, IndoorReading> = Signal::new();
-static WEATHER_READING: Signal<CriticalSectionRawMutex, WeatherReading> = Signal::new();
+static WEATHER_READING: Signal<CriticalSectionRawMutex, WeatherReport> = Signal::new();
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -62,6 +59,7 @@ async fn main(spawner: Spawner) {
             p.GPIO19.into(),
             p.GPIO0.into(),
             p.GPIO1.into(),
+            boot_id,
         )
         .unwrap(),
     );
@@ -83,35 +81,21 @@ async fn report_heartbeats(boot_id: [u8; 16]) {
 
 #[embassy_executor::task]
 async fn log_readings() {
-    // Indoor fields, including finite f32 extremes, fit in 256 bytes (wire-tested).
-    let mut buffer = [0; 256];
+    // Static storage keeps the complete weather record off the embedded stack.
+    static BUFFER: Mutex<CriticalSectionRawMutex, [u8; MAX_RECORD_BYTES]> =
+        Mutex::new([0; MAX_RECORD_BYTES]);
+    let mut buffer = BUFFER.lock().await;
     loop {
         match select(INDOOR_READING.wait(), WEATHER_READING.wait()).await {
-            Either::First(reading) => match reading.encode(&mut buffer) {
+            Either::First(reading) => match reading.encode(&mut buffer[..]) {
                 // Printer holds the same lock as operational logging for the whole record.
                 Ok(record) => esp_println::Printer::write_bytes(record),
                 Err(_) => warn!("Could not format indoor DATA record"),
             },
-            Either::Second(reading) => log_weather(reading),
+            Either::Second(reading) => match reading.encode(&mut buffer[..]) {
+                Ok(record) => esp_println::Printer::write_bytes(record),
+                Err(_) => warn!("Could not format weather DATA record"),
+            },
         }
     }
-}
-
-fn log_weather(reading: WeatherReading) {
-    info!(
-        "Weather reading: station ID={}, temperature={:?} °C, relative humidity={:?} %RH, wind direction={:?} degrees, wind speed={:?} m/s, gust={:?} m/s, cumulative rain={:.1} mm, UV={:?} µW/cm², UV index={:?}, light={:?} lux, battery low={}, RSSI={:.1} dBm, LQI={}",
-        reading.station_id,
-        reading.temperature_celsius,
-        reading.relative_humidity_percent,
-        reading.wind_direction_degrees,
-        reading.wind_speed_mps,
-        reading.gust_speed_mps,
-        reading.rain_mm,
-        reading.uv_microwatts_per_cm2,
-        reading.uv_index,
-        reading.light_lux,
-        reading.battery_low,
-        reading.rssi_dbm,
-        reading.lqi,
-    );
 }

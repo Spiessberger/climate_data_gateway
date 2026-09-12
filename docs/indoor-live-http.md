@@ -3,8 +3,8 @@
 The indoor producer still measures paired temperature and humidity immediately
 after SHT40 setup and every 60 seconds, with five-second retries on failure.
 Successful measurements receive a sequence number before entering the existing
-overwrite-on-publish signal. Weather acquisition, selection and text reporting
-remain unchanged in this first service integration slice.
+overwrite-on-publish signal. Weather acquisition and selection remain unchanged. Weather reports now use the
+DATA contract described in [weather reporting](weather-live-history.md).
 
 At boot, the firmware temporarily enables the ESP32-C6 ADC entropy source using
 `TrngSource`, fills a 16-byte boot identifier, then drops `Trng` before its source.
@@ -23,8 +23,8 @@ All fields are required. Version and sequence are integers; measurements are
 finite numbers in °C and percent. Boot identifiers have 32 lowercase hexadecimal
 characters. The indoor counter starts at 1 and wraps from 4294967295 to 0.
 Formatting errors emit a warning instead of a partial record. The whole DATA line
-must fit 1024 bytes including prefix and LF; indoor reports use a tested 256-byte
-buffer to keep the embedded stack small. USB may still drop or truncate output.
+must fit 1024 bytes including prefix and LF; the reading consumer uses a bounded buffer in static storage to keep the
+embedded stack small. USB may still drop or truncate output.
 
 A separate task emits a heartbeat every five seconds, including during sensor
 silence. It uses the same boot identifier and synchronized printer path, with no
@@ -73,13 +73,12 @@ watch -n 1 curl -s http://127.0.0.1:8080/live
 
 Check for an initial paired indoor reading and a subsequent reading after roughly
 60 seconds, with a stable boot identifier and advancing sequence. Restarting the
-gateway should produce a new boot identifier and start the counter at 1. Weather
-remains text and cannot overwrite indoor live state. Retain actual hardware
+gateway should produce a new boot identifier and start the counter at 1. Weather DATA uses its own sequence and cannot overwrite indoor live state. Retain actual hardware
 observations separately from simulated results.
 
 Gateway tickets 01 and 03 now provide the indoor DATA path and independent
 heartbeats. The service also exposes connection health, restarts and observed
 indoor counter gaps alongside live readings, and can reconnect without restarting.
-Weather DATA and permanent logs belong to later slices. The new heartbeat
-schedule has been built and wire-tested; it has not yet been flashed and observed
-on real hardware.
+Ticket 05 adds complete weather DATA and weather live/history service support.
+The reporting changes have been built and wire-tested; real-hardware validation
+of this firmware remains separate.

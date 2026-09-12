@@ -93,6 +93,118 @@ impl IndoorReading {
     }
 }
 
+/// Weather identity is assigned only to accepted readings, before signal overwrite.
+pub struct WeatherSource {
+    boot_id: [u8; 16],
+    seq: u32,
+}
+
+impl WeatherSource {
+    pub fn new(boot_id: [u8; 16]) -> Self {
+        Self { boot_id, seq: 0 }
+    }
+
+    pub fn produce(&mut self, reading: crate::weather::WeatherReading) -> WeatherReport {
+        self.seq = self.seq.wrapping_add(1);
+        WeatherReport {
+            boot_id: self.boot_id,
+            seq: self.seq,
+            reading,
+        }
+    }
+}
+
+pub struct WeatherReport {
+    boot_id: [u8; 16],
+    seq: u32,
+    reading: crate::weather::WeatherReading,
+}
+
+impl WeatherReport {
+    /// Only a successful result may be transmitted, in one synchronized write.
+    pub fn encode<'a>(&self, buffer: &'a mut [u8]) -> Result<&'a [u8], fmt::Error> {
+        let reading = &self.reading;
+        if [
+            reading.temperature_celsius,
+            reading.wind_speed_mps,
+            reading.gust_speed_mps,
+            reading.light_lux,
+            Some(reading.rain_mm),
+            Some(reading.rssi_dbm),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|value| !value.is_finite())
+        {
+            return Err(fmt::Error);
+        }
+        let capacity = buffer.len().min(MAX_RECORD_BYTES);
+        let mut output = RecordBuffer {
+            bytes: &mut buffer[..capacity],
+            len: 0,
+        };
+        write!(output, "DATA {{\"v\":1,\"type\":\"weather\",\"boot_id\":\"")?;
+        for byte in self.boot_id {
+            write!(output, "{byte:02x}")?;
+        }
+        write!(
+            output,
+            "\",\"seq\":{},\"station_id\":{}",
+            self.seq, reading.station_id
+        )?;
+        write!(
+            output,
+            ",\"temperature_celsius\":{}",
+            Nullable(reading.temperature_celsius)
+        )?;
+        write!(
+            output,
+            ",\"relative_humidity_percent\":{}",
+            Nullable(reading.relative_humidity_percent)
+        )?;
+        write!(
+            output,
+            ",\"wind_direction_degrees\":{}",
+            Nullable(reading.wind_direction_degrees)
+        )?;
+        write!(
+            output,
+            ",\"wind_speed_mps\":{}",
+            Nullable(reading.wind_speed_mps)
+        )?;
+        write!(
+            output,
+            ",\"gust_speed_mps\":{}",
+            Nullable(reading.gust_speed_mps)
+        )?;
+        write!(output, ",\"rain_mm\":{}", reading.rain_mm)?;
+        write!(
+            output,
+            ",\"uv_microwatts_per_cm2\":{}",
+            Nullable(reading.uv_microwatts_per_cm2)
+        )?;
+        write!(output, ",\"uv_index\":{}", Nullable(reading.uv_index))?;
+        write!(output, ",\"light_lux\":{}", Nullable(reading.light_lux))?;
+        write!(output, ",\"battery_low\":{}", reading.battery_low)?;
+        write!(output, ",\"rssi_dbm\":{}", reading.rssi_dbm)?;
+        write!(output, ",\"lqi\":{}", reading.lqi)?;
+        writeln!(output, "}}")?;
+        let len = output.len;
+        Ok(&buffer[..len])
+    }
+}
+
+struct Nullable<T>(Option<T>);
+
+impl<T: fmt::Display> fmt::Display for Nullable<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Some(value) => value.fmt(formatter),
+            None => formatter.write_str("null"),
+        }
+    }
+}
+
 fn normalize_one_decimal_zero(value: f32) -> f32 {
     if value > -0.05 && value < 0.05 {
         0.0
@@ -248,3 +360,6 @@ mod tests {
         assert!(wire.contains("\"temperature_celsius\":0.0,\"relative_humidity_percent\":0.0"));
     }
 }
+
+#[cfg(test)]
+mod weather_tests;

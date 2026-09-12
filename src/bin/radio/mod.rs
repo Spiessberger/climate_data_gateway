@@ -1,6 +1,6 @@
 mod cc1101;
 
-use climate_data_gateway::weather::Receiver;
+use climate_data_gateway::{reporting::WeatherSource, weather::Receiver};
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{gpio::AnyPin, spi::master::AnySpi};
 use log::{debug, info, warn};
@@ -16,7 +16,9 @@ pub async fn receive_weather(
     sck: AnyPin<'static>,
     cs: AnyPin<'static>,
     gdo0: AnyPin<'static>,
+    boot_id: [u8; 16],
 ) {
+    let mut source = WeatherSource::new(boot_id);
     let mut radio = Cc1101::new(spi, mosi, miso, sck, cs, gdo0);
     // Keep selection across radio resets, but keep advancing its silence clock.
     let mut receiver = Receiver::new(Instant::now().as_millis());
@@ -28,6 +30,7 @@ pub async fn receive_weather(
                     let result = radio.receive().await;
                     report(
                         &mut receiver,
+                        &mut source,
                         result
                             .as_ref()
                             .ok()
@@ -46,7 +49,7 @@ pub async fn receive_weather(
 
         let retry_at = Instant::now() + Duration::from_secs(5);
         while Instant::now() < retry_at {
-            report(&mut receiver, None);
+            report(&mut receiver, &mut source, None);
             Timer::at(core::cmp::min(
                 Instant::now() + Duration::from_secs(1),
                 retry_at,
@@ -56,7 +59,7 @@ pub async fn receive_weather(
     }
 }
 
-fn report(receiver: &mut Receiver, packet: Option<&[u8]>) {
+fn report(receiver: &mut Receiver, source: &mut WeatherSource, packet: Option<&[u8]>) {
     let update = receiver.update(Instant::now().as_millis(), packet);
     if update.silence_started {
         warn!("No accepted weather reading for 60 seconds");
@@ -74,6 +77,6 @@ fn report(receiver: &mut Receiver, packet: Option<&[u8]>) {
         debug!("Rejected WH24 packet: {error:?}");
     }
     if let Some(reading) = update.reading {
-        WEATHER_READING.signal(reading);
+        WEATHER_READING.signal(source.produce(reading));
     }
 }
