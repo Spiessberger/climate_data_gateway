@@ -2,7 +2,7 @@ mod cc1101;
 
 use climate_data_gateway::weather::Receiver;
 use embassy_time::{Duration, Instant, Timer};
-use esp_hal::peripherals::{GPIO0, GPIO1, GPIO18, GPIO19, GPIO20, SPI2};
+use esp_hal::{gpio::AnyPin, spi::master::AnySpi};
 use log::{debug, info, warn};
 
 use crate::WEATHER_READING;
@@ -10,12 +10,12 @@ use cc1101::Cc1101;
 
 #[embassy_executor::task]
 pub async fn receive_weather(
-    spi: SPI2<'static>,
-    mosi: GPIO18<'static>,
-    miso: GPIO20<'static>,
-    sck: GPIO19<'static>,
-    cs: GPIO0<'static>,
-    gdo0: GPIO1<'static>,
+    spi: AnySpi<'static>,
+    mosi: AnyPin<'static>,
+    miso: AnyPin<'static>,
+    sck: AnyPin<'static>,
+    cs: AnyPin<'static>,
+    gdo0: AnyPin<'static>,
 ) {
     let mut radio = Cc1101::new(spi, mosi, miso, sck, cs, gdo0);
     // Keep selection across radio resets, but keep advancing its silence clock.

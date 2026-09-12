@@ -39,9 +39,17 @@ async fn main(spawner: Spawner) {
     esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
 
     spawner.spawn(log_readings().unwrap());
-    spawner.spawn(sensor::read_climate(p.I2C0, p.GPIO22, p.GPIO23).unwrap());
+    spawner.spawn(sensor::read_climate(p.I2C0.into(), p.GPIO22.into(), p.GPIO23.into()).unwrap());
     spawner.spawn(
-        radio::receive_weather(p.SPI2, p.GPIO18, p.GPIO20, p.GPIO19, p.GPIO0, p.GPIO1).unwrap(),
+        radio::receive_weather(
+            p.SPI2.into(),
+            p.GPIO18.into(),
+            p.GPIO20.into(),
+            p.GPIO19.into(),
+            p.GPIO0.into(),
+            p.GPIO1.into(),
+        )
+        .unwrap(),
     );
 }
 

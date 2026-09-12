@@ -6,11 +6,10 @@
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use esp_hal::{
     Blocking,
-    gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
-    peripherals::{GPIO0, GPIO1, GPIO18, GPIO19, GPIO20, SPI2},
+    gpio::{AnyPin, Input, InputConfig, Level, Output, OutputConfig, Pull},
     spi::{
         Mode,
-        master::{Config, Spi},
+        master::{AnySpi, Config, Spi},
     },
     time::Rate,
 };
@@ -123,12 +122,12 @@ pub struct Cc1101 {
 
 impl Cc1101 {
     pub fn new(
-        spi: SPI2<'static>,
-        mosi: GPIO18<'static>,
-        miso: GPIO20<'static>,
-        sck: GPIO19<'static>,
-        cs: GPIO0<'static>,
-        gdo0: GPIO1<'static>,
+        spi: AnySpi<'static>,
+        mosi: AnyPin<'static>,
+        miso: AnyPin<'static>,
+        sck: AnyPin<'static>,
+        cs: AnyPin<'static>,
+        gdo0: AnyPin<'static>,
     ) -> Self {
         // A disconnected SO should time out, not masquerade as a ready radio.
         let miso = Input::new(miso, InputConfig::default().with_pull(Pull::Up));

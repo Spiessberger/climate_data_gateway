@@ -1,7 +1,7 @@
 use embassy_time::{Delay, Duration, Instant, Timer};
 use esp_hal::{
-    i2c::master::{BusTimeout, Config, I2c},
-    peripherals::{GPIO22, GPIO23, I2C0},
+    gpio::AnyPin,
+    i2c::master::{AnyI2c, BusTimeout, Config, I2c},
 };
 use log::warn;
 use sht4x::{Precision, Sht4xAsync};
@@ -16,7 +16,7 @@ const SAMPLE_INTERVAL: Duration = Duration::from_secs(60);
     clippy::large_stack_frames,
     reason = "Embassy stores task state statically; the release poll frame was verified at 288 bytes"
 )]
-pub async fn read_climate(i2c: I2C0<'static>, sda: GPIO22<'static>, scl: GPIO23<'static>) {
+pub async fn read_climate(i2c: AnyI2c<'static>, sda: AnyPin<'static>, scl: AnyPin<'static>) {
     let bus = I2c::new(i2c, Config::default().with_timeout(BusTimeout::Maximum))
         .expect("valid I2C configuration")
         .with_sda(sda)
