@@ -7,8 +7,8 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+mod indoor;
 mod radio;
-mod sensor;
 
 use climate_data_gateway::weather::WeatherReading;
 use embassy_executor::Spawner;
@@ -18,13 +18,13 @@ use esp_backtrace as _;
 use esp_hal::timer::timg::TimerGroup;
 use log::info;
 
-struct ClimateReading {
+struct IndoorReading {
     temperature_celsius: f32,
     relative_humidity_percent: f32,
 }
 
 // One consumer; publishing replaces any reading it has not consumed yet.
-static CLIMATE_READING: Signal<CriticalSectionRawMutex, ClimateReading> = Signal::new();
+static INDOOR_READING: Signal<CriticalSectionRawMutex, IndoorReading> = Signal::new();
 static WEATHER_READING: Signal<CriticalSectionRawMutex, WeatherReading> = Signal::new();
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -39,7 +39,7 @@ async fn main(spawner: Spawner) {
     esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
 
     spawner.spawn(log_readings().unwrap());
-    spawner.spawn(sensor::read_climate(p.I2C0.into(), p.GPIO22.into(), p.GPIO23.into()).unwrap());
+    spawner.spawn(indoor::read_indoor(p.I2C0.into(), p.GPIO22.into(), p.GPIO23.into()).unwrap());
     spawner.spawn(
         radio::receive_weather(
             p.SPI2.into(),
@@ -56,9 +56,9 @@ async fn main(spawner: Spawner) {
 #[embassy_executor::task]
 async fn log_readings() {
     loop {
-        match select(CLIMATE_READING.wait(), WEATHER_READING.wait()).await {
+        match select(INDOOR_READING.wait(), WEATHER_READING.wait()).await {
             Either::First(reading) => info!(
-                "Climate reading: temperature={:.2} °C, relative humidity={:.2} %RH",
+                "Indoor reading: temperature={:.2} °C, relative humidity={:.2} %RH",
                 reading.temperature_celsius, reading.relative_humidity_percent
             ),
             Either::Second(reading) => log_weather(reading),

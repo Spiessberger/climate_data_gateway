@@ -17,6 +17,6 @@ The WH24 station ID can change after battery replacement. The user chose automat
 ## Delegated decisions
 
 - Require valid family code, CRC-8, and additive checksum before an incoming frame can select a station or produce a reading.
-- Give weather readings their own latest-reading signal, following ADR 0001's delivery convention. A new weather reading overwrites an unread weather reading; it cannot overwrite a local climate reading.
+- Give weather readings their own latest-reading signal, following ADR 0001's delivery convention. A new weather reading overwrites an unread weather reading; it cannot overwrite an indoor reading.
 
 These choices were captured during bounded grill-with-docs and confirmed by the user's request to implement the assembled design. The complete implementation specification is in `.scratch/wh24-receiver/spec.md`.

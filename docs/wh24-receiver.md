@@ -24,7 +24,7 @@ The next valid packet can select any station. Selection is kept only in memory
 and its deadline continues through radio retries. See [the selection decision](adr/0002-weather-station-selection.md).
 
 Weather readings use their own overwrite-on-publish signal, consumed alongside
-local climate readings by `log_readings`. `None` in a weather log denotes an
+indoor readings by `log_readings`. `None` in a weather log denotes an
 unavailable quantity. Rain is the station's cumulative counter converted to mm;
 the gateway does not calculate rainfall deltas or persist totals.
 
@@ -33,7 +33,7 @@ readback, and entry into RX. It does not prove RF reception or GDO0 wiring.
 Initialization/runtime errors warn and retry after five seconds while local
 sensor acquisition continues. A single warning follows 60 seconds without an
 accepted weather reading, and recovery is logged when a reading is accepted.
-Local climate sampling remains at its existing 60-second interval.
+The indoor sensor samples every 60 seconds.
 
 Build and validate from the repository root:
 
@@ -56,7 +56,7 @@ espflash flash --port /dev/ttyACM0 --chip esp32c6 --monitor --log-format serial 
 ```
 
 Allow at least 90 seconds to observe several nominal 16-second transmissions
-and the silence warning. Confirm that local climate logs continue even if the
+and the silence warning. Confirm that indoor reading logs continue even if the
 CC1101 is disconnected. Absent weather logs alone cannot distinguish poor
 reception from wiring, antenna, or station problems. The session hardware test
 record lives in `.scratch/wh24-receiver/hardware-test.md`.

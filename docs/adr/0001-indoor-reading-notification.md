@@ -2,14 +2,14 @@
 status: accepted
 ---
 
-# Deliver the latest climate reading to one consumer
+# Deliver the latest indoor reading to one consumer
 
-The sensor producer and reporting consumer communicate through a single pending climate reading. New readings overwrite an unread reading: the user chose freshness over preserving every measurement, so future serial reporting must not assume that every measurement is delivered.
+The indoor sensor producer and reporting consumer communicate through a single pending indoor reading. New readings overwrite an unread reading: the user chose freshness over preserving every measurement, so future serial reporting must not assume that every measurement is delivered.
 
 ## User decisions
 
 - Connect the SHT40 over I²C using GPIO22 for SDA and GPIO23 for SCL.
-- An Embassy task sets up the sensor and measures both temperature and relative humidity immediately after setup, then every five seconds.
+- An Embassy task sets up the sensor and measures both temperature and relative humidity immediately after setup, then every 60 seconds.
 - Publish both quantities together in one slot; overwrite its contents when another reading arrives before consumption.
 - The consumer logs each received reading at info level.
 - On initialization or measurement failure, warn, publish no reading, and retry after five seconds.
