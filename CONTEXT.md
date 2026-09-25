@@ -1,8 +1,28 @@
 # Climate Data Gateway
 
 The gateway collects indoor readings and readings transmitted by a weather station for reporting.
+The climate data service receives climate readings and gateway logs, retains history, and serves applications that display live and historical data.
 
 ## Language
+
+**Climate data service**:
+The application that receives gateway readings and logs, preserves historical data, and provides live readings and historical queries to clients.
+_Avoid_: Collector (describes only its acquisition responsibility), Pi application (the role is independent of its host)
+
+**Climate reading**:
+An indoor reading or a weather reading, including the source and sensor status available with that reading.
+
+**Live reading**:
+The latest valid climate reading received for the indoor or weather stream, available to clients regardless of whether it has been stored.
+
+**Stored reading**:
+A climate reading successfully preserved by the climate data service and available as historical data. A live reading is not necessarily a stored reading.
+
+**Reception time**:
+The time the climate data service receives a climate reading. It does not assert when the sensor measured the reported quantities.
+
+**Gateway heartbeat**:
+A periodic notification from the gateway that allows the climate data service to detect loss of communication independently of climate readings.
 
 **Indoor sensor**:
 The local sensor that measures indoor temperature and relative humidity.
